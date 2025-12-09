@@ -15,7 +15,7 @@ app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(cookieParser());
 
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || "https://chatter-x-frontend.vercel.app/",
+    origin: process.env.CORS_ORIGIN || "https://chatter-x-frontend-qw4x.vercel.app",
     credentials: true,
 }));         
 
@@ -60,7 +60,7 @@ import { Server } from "socket.io";
 const io = new Server(server, {
     pingTimeout: 60000, 
     cors: {
-        origin: process.env.CORS_ORIGIN || "https://chatter-x-frontend.vercel.app/", 
+        origin: process.env.CORS_ORIGIN || "https://chatter-x-frontend-qw4x.vercel.app", 
         credentials: true,
     },
 });
