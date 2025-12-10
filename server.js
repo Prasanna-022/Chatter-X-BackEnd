@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { Server } from "socket.io"; 
-import { createServer } from 'http'; // Import http server
+import { createServer } from 'http'; 
 import connectDB from './src/config/db.js'; 
 
 import userRoutes from './src/routes/userRoutes.js'; 
@@ -21,34 +21,37 @@ connectDB();
 configureCloudinary();
 
 const app = express();
-const httpServer = createServer(app); // Create HTTP server explicitly
+const httpServer = createServer(app); 
 
-// Increase payload limit for images/files
 app.use(express.json({ limit: '10mb' })); 
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// --- CORS CONFIGURATION ---
-const allowedOrigins = [
-    "https://chatter-x-frontend.vercel.app",      
-    "https://chatter-x-frontend-qw4x.vercel.app", 
-    "http://localhost:5173",          
-    process.env.CORS_ORIGIN                       
-].filter(Boolean);
-
+// --- PRODUCTION CORS CONFIGURATION ---
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl requests)
+        // Allow requests with no origin (like mobile apps, curl, or server-to-server)
         if (!origin) return callback(null, true);
         
-        if (allowedOrigins.includes(origin)) {
+        // Define allowed static origins
+        const allowedOrigins = [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "https://chatter-x-backend-lnwx.vercel.app"// Add your main production domain in .env
+        ];
+
+        // DYNAMIC CHECK: Allow any Vercel preview deployment
+        // Checks if the origin ends with .vercel.app
+        const isVercelPreview = origin.endsWith(".vercel.app");
+
+        if (allowedOrigins.includes(origin) || isVercelPreview) {
             callback(null, true);
         } else {
             console.log("Blocked by CORS:", origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true,
+    credentials: true, // ESSENTIAL for cookies to work
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 }));
 
@@ -67,21 +70,28 @@ app.use('/call', callLogRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-// --- SOCKET.IO & SERVER START ---
-
+// --- SOCKET.IO SETUP ---
 const PORT = process.env.PORT || 5000;
 
-// Initialize Socket.io on the HTTP server
 const io = new Server(httpServer, {
     pingTimeout: 60000, 
     cors: {
-        origin: allowedOrigins,
+        origin: (origin, callback) => {
+            // Re-use same logic as Express CORS
+            if (!origin) return callback(null, true);
+            const allowedOrigins = ["http://localhost:5173", "https://chatter-x-backend-lnwx.vercel.app"];
+            if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         credentials: true,
     },
 });
 
 io.on("connection", (socket) => {
-    console.log("Connected to socket.io");
+    console.log("Connected to socket.io:", socket.id);
 
     socket.on("setup", (userData) => {
         if(userData?._id) {
@@ -125,9 +135,9 @@ io.on("connection", (socket) => {
     });
 });
 
-// Start the server (Always listen, regardless of env)
+// START SERVER
 httpServer.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
 
 export default app;
