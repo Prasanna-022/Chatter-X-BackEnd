@@ -14,8 +14,8 @@ const connectDB = async () => {
     try {
         const conn = await mongoose.connect(process.env.MONGO_URI, {
             // These options are often default now but good for stability
-            serverSelectionTimeoutMS: 15000, // Timeout faster if network is bad (5s instead of 30s)
-            socketTimeoutMS: 45000,
+            serverSelectionTimeoutMS: 20000, // Timeout faster if network is bad (5s instead of 30s)
+            socketTimeoutMS: 50000,
         });
 
         isConnected = true;
