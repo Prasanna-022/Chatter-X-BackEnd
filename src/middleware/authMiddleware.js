@@ -4,7 +4,7 @@ import ApiError from '../utils/ApiError.js';
 
 const protect = async (req, res, next) => {
  
-    const accessToken = req.cookies?.accessToken;
+    const accessToken = req.cookies?.accessToken || req.headers.authorization?.split(' ')[1];
     
     let token = accessToken;
 
