@@ -20,14 +20,14 @@ const registerUser = asyncHandler(async (req, res) => {
 
     if (user) {
         res
-        .standardSuccess({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            avatar: user.avatar,
-            token: generateToken(user._id), // This generates a simple token, inconsistent with the other controller
-        }, 'User registered successfully!', 201)
-        
+            .standardSuccess({
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                avatar: user.avatar,
+                token: generateToken(user._id), // This generates a simple token, inconsistent with the other controller
+            }, 'User registered successfully!', 201)
+
     } else {
         throw new ApiError(500, 'User creation failed. Invalid data.');
     }
@@ -40,28 +40,29 @@ const loginUser = asyncHandler(async (req, res) => {
 
     if (user && (await user.matchPassword(password))) {
 
-
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
-    );
+        console.log(user);
+        const token = jwt.sign(
+            { id: user._id },
+            process.env.ACCESS_TOKEN_SECRET,
+            { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+        );
+        console.log(token)
         res
-        .status(200)
-        .json({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            avatar: user.avatar,
-            token: token, 
-        })
-        .cookie('accessToken', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'none',
-            maxAge: 1000 * 60 * 60 * 24 * 7, 
-        })
-        
+            .status(200)
+            .json({
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                avatar: user.avatar,
+                token: token,
+            })
+            .cookie('accessToken', token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'none',
+                maxAge: 1000 * 60 * 60 * 24 * 7,
+            })
+
     } else {
         throw new ApiError(401, 'Invalid Email or Password.');
     }
