@@ -444,7 +444,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 
         if (req.file) {
             // Using local storage path as per your route config
-            user.avatar = "http://localhost:5000/uploads/" + req.file.filename;
+            user.avatar = req.file.filename;
         }
 
         const updatedUser = await user.save();

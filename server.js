@@ -1,9 +1,8 @@
+
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { Server } from "socket.io"; 
-import { createServer } from 'http'; 
 import connectDB from './src/config/db.js'; 
 
 import userRoutes from './src/routes/userRoutes.js'; 
@@ -21,44 +20,21 @@ connectDB();
 configureCloudinary();
 
 const app = express();
-const httpServer = createServer(app); 
 
 app.use(express.json({ limit: '10mb' })); 
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// --- PRODUCTION CORS CONFIGURATION ---
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, or server-to-server)
-        if (!origin) return callback(null, true);
-        
-        // Define allowed static origins
-        const allowedOrigins = [
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "https://chatter-x-backend-lnwx.vercel.app"// Add your main production domain in .env
-        ];
-
-        // DYNAMIC CHECK: Allow any Vercel preview deployment
-        // Checks if the origin ends with .vercel.app
-        const isVercelPreview = origin.endsWith(".vercel.app");
-
-        if (allowedOrigins.includes(origin) || isVercelPreview) {
-            callback(null, true);
-        } else {
-            console.log("Blocked by CORS:", origin);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true, // ESSENTIAL for cookies to work
+    origin: ["http://localhost:5173", "https://chatter-x-frontend-v2m8.vercel.app"],
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 }));
 
 app.use(apiResponse);
 
 app.get('/', (req, res) => {
-    res.standardSuccess(null, 'NovaChat API is running successfully');
+    res.standardSuccess(null, 'NovaChat API is running successfully (No Sockets)');
 });
 
 app.use('/healthcheck', healthcheckRoutes);
@@ -70,73 +46,9 @@ app.use('/call', callLogRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-// --- SOCKET.IO SETUP ---
 const PORT = process.env.PORT || 5000;
 
-const io = new Server(httpServer, {
-    pingTimeout: 60000, 
-    cors: {
-        origin: (origin, callback) => {
-            // Re-use same logic as Express CORS
-            if (!origin) return callback(null, true);
-            const allowedOrigins = ["http://localhost:5173", "https://chatter-x-backend-lnwx.vercel.app"];
-            if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
-                callback(null, true);
-            } else {
-                callback(new Error('Not allowed by CORS'));
-            }
-        },
-        credentials: true,
-    },
-});
-
-io.on("connection", (socket) => {
-    console.log("Connected to socket.io:", socket.id);
-
-    socket.on("setup", (userData) => {
-        if(userData?._id) {
-            socket.join(userData._id);
-            socket.emit("connected");
-        }
-    });
-
-    socket.on("join_chat", (chatId) => {
-        socket.join(chatId);
-    });
-    
-    socket.on("new_message", (newMessageReceived) => {
-        var chat = newMessageReceived.chat;
-        if (!chat.users) return;
-        chat.users.forEach((user) => {
-            if (user._id === newMessageReceived.sender._id) return; 
-            socket.in(user._id.toString()).emit("message_received", newMessageReceived);
-        });
-    });
-
-    socket.on("typing", (chatId) => socket.in(chatId).emit("typing"));
-    socket.on("stop_typing", (chatId) => socket.in(chatId).emit("stop_typing"));
-    
-    socket.on("call_user", ({ userToCall, signalData, from, name }) => {
-        io.to(userToCall.toString()).emit("call_user", { signal: signalData, from, name });
-    });
-
-    socket.on("answer_call", (data) => {
-        io.to(data.to.toString()).emit("call_accepted", data.signal);
-    });
-    
-    socket.on("end_call", (data) => {
-        io.to(data.to.toString()).emit("call_ended");
-    });
-
-    socket.off("setup", (userData) => {
-        if (userData && userData._id) {
-            socket.leave(userData._id.toString());
-        }
-    });
-});
-
-// START SERVER
-httpServer.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
