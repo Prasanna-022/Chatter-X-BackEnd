@@ -28,7 +28,7 @@ const geminiApiCall = async (prompt) => {
     });
 
     try {
-        // 3. Make the API Call
+        
         const response = await fetch(OPENROUTER_URL, {
             method: "POST",
             headers: {
