@@ -5,9 +5,7 @@ import FriendRequest from "../models/friendRequestModel.js";
 import Chat from "../models/chatModel.js";
 import { deletefromCloudinary, uploadonCloudinary } from "../utils/cloudinary.js";
 import jwt from "jsonwebtoken";
-import pusher from "../utils/pusher.js"; // ✅ Critical for Real-time updates
-
-// --- Helper Functions ---
+import pusher from "../utils/pusher.js";
 
 const generateAccessandRefreshtoken = async (userId) => {
     try {
@@ -27,9 +25,9 @@ const generateAccessandRefreshtoken = async (userId) => {
 }
 
 const geminiApiCall = async (prompt) => {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
     const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-    const MODEL_NAME = "google/gemini-2.5-flash";
+    const MODEL_NAME = "google/gemini-2.0-flash-001";
 
     if (!apiKey) {
         throw new Error("AI API key is missing from environment variables.");
@@ -62,7 +60,6 @@ const geminiApiCall = async (prompt) => {
 
         if (!response.ok) {
             const errorBody = await response.json();
-            console.error("OpenRouter API Error:", response.status, errorBody);
             throw new Error(`API rejected request: ${errorBody.message || 'Check quotas/key validity.'}`);
         }
 
@@ -79,8 +76,6 @@ const geminiApiCall = async (prompt) => {
     }
 };
 
-// --- Controller Functions ---
-
 const registerUser = asyncHandler(async (req, res) => {
     const { fullName, email, password, username } = req.body;
 
@@ -96,10 +91,10 @@ const registerUser = asyncHandler(async (req, res) => {
     let avatarUrl = "https://icon-library.com/images/default-user-icon/default-user-icon-8.jpg";
     let avatarPublicId = null;
 
-    if (req.files?.avatar?.[0]?.buffer) {
-        const avatarData = await uploadonCloudinary(req.files.avatar[0].buffer);
+    if (req.file && req.file.buffer) {
+        const avatarData = await uploadonCloudinary(req.file.buffer);
         if (avatarData) {
-            avatarUrl = avatarData.secure_url; // ✅ HTTPS enforced
+            avatarUrl = avatarData.secure_url;
             avatarPublicId = avatarData.public_id;
         }
     }
@@ -116,11 +111,10 @@ const registerUser = asyncHandler(async (req, res) => {
     const { accessToken, refreshToken } = await generateAccessandRefreshtoken(user._id);
     const createdUser = await User.findById(user._id).select("-password -refreshToken");
 
-    // ✅ FIXED: Force secure: true for Render/Vercel connection
     const options = {
         httpOnly: true,
-        secure: true, 
-        sameSite: "none", 
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 1000 * 60 * 60 * 24 * 7 
     };
 
@@ -144,8 +138,8 @@ const loginUser = asyncHandler(async (req, res) => {
 
         const options = {
             httpOnly: true,
-            secure: true, // ✅ Force true for production
-            sameSite: "none",
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
             maxAge: 1000 * 60 * 60 * 24 * 7 
         };
 
@@ -170,12 +164,12 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 const logoutUser = asyncHandler(async (req, res) => {
-    await User.findByIdAndUpdate(req.user._id, { $set: { refreshToken: undefined } }, { new: true });
+    await User.findByIdAndUpdate(req.user._id, { $unset: { refreshToken: 1 } }, { new: true });
 
     const options = {
         httpOnly: true,
-        secure: true,
-        sameSite: "none"
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax"
     };
 
     return res
@@ -208,8 +202,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 
         const options = { 
             httpOnly: true, 
-            secure: true,
-            sameSite: "none"
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax"
         };
 
         return res
@@ -229,7 +223,7 @@ const getAllChatUsers = asyncHandler(async (req, res) => {
     let filter = {};
     if (keyword) {
         filter.$or = [
-            { fullName: { $regex: keyword, $options: 'i' } },
+            { name: { $regex: keyword, $options: 'i' } },
             { email: { $regex: keyword, $options: 'i' } },
             { username: { $regex: keyword, $options: 'i' } },
         ];
@@ -237,7 +231,7 @@ const getAllChatUsers = asyncHandler(async (req, res) => {
 
     filter._id = { $ne: currentUserId };
 
-    const users = await User.find(filter).select("fullName username email avatar");
+    const users = await User.find(filter).select("name username email avatar");
 
     return res.status(200).json({ users, message: "Users fetched successfully" });
 });
@@ -256,7 +250,7 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
     const user = await User.findByIdAndUpdate(
         req.user._id,
         {
-            $set: { fullName, email }
+            $set: { name: fullName, email }
         },
         { new: true }
     ).select("-password -refreshToken");
@@ -269,7 +263,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 
     const user = await User.findById(req.user._id);
 
-    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+    const isPasswordCorrect = await user.matchPassword(oldPassword);
 
     if (!isPasswordCorrect) {
         throw new ApiError(401, "Invalid old password");
@@ -293,7 +287,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
 
     const avatar = await uploadonCloudinary(avatarBuffer);
 
-    if (!avatar.url) {
+    if (!avatar.secure_url) {
         throw new ApiError(500, "Failed to upload avatar to Cloudinary");
     }
 
@@ -301,7 +295,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
         user._id,
         {
             $set: {
-                avatar: avatar.secure_url, // ✅ HTTPS
+                avatar: avatar.secure_url,
                 cloudinaryPublicId: avatar.public_id
             }
         },
@@ -343,7 +337,6 @@ const sendFriendRequest = asyncHandler(async (req, res) => {
 
     const request = await FriendRequest.create({ sender: senderId, recipient: recipient._id });
 
-    // ✅ TRIGGER PUSHER: Notify Recipient Real-time
     try {
         await pusher.trigger(recipient._id.toString(), "friend-request-received", {
             message: `New friend request from ${req.user.name}`,
@@ -362,7 +355,7 @@ const sendFriendRequest = asyncHandler(async (req, res) => {
 
 const getPendingRequests = asyncHandler(async (req, res) => {
     const requests = await FriendRequest.find({ recipient: req.user._id, status: 'pending' })
-        .populate('sender', 'fullName username avatar');
+        .populate('sender', 'name username avatar');
 
     return res.status(200).json({ requests, message: 'Pending friend requests fetched.' });
 });
@@ -390,7 +383,6 @@ const respondToFriendRequest = asyncHandler(async (req, res) => {
         });
         message = "Friend request accepted and chat room created.";
 
-        // ✅ TRIGGER PUSHER: Notify Original Sender
         try {
             await pusher.trigger(request.sender._id.toString(), "request-accepted", {
                 message: `${req.user.name} accepted your friend request`,
@@ -454,7 +446,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
 
     if (user) {
-        user.fullName = req.body.fullName || user.fullName;
+        user.name = req.body.fullName || user.name;
         user.username = req.body.username || user.username;
         if (req.body.password) {
             user.password = req.body.password;
@@ -463,15 +455,23 @@ const updateUserProfile = asyncHandler(async (req, res) => {
         if (req.file) {
              const avatarData = await uploadonCloudinary(req.file.buffer);
              if (avatarData && avatarData.secure_url) {
-                 user.avatar = avatarData.secure_url; // ✅ HTTPS
+                 user.avatar = avatarData.secure_url;
                  user.cloudinaryPublicId = avatarData.public_id;
              }
         }
 
         const updatedUser = await user.save();
         const { accessToken, refreshToken } = await generateAccessandRefreshtoken(user._id);
+        
+        const options = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax"
+        };
 
-        res.json({
+        res.cookie("accessToken", accessToken, options)
+           .cookie("refreshToken", refreshToken, options)
+           .json({
             user: updatedUser,
             accessToken,
             message: "Profile updated successfully"
